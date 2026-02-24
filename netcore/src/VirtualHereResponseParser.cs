@@ -139,10 +139,18 @@ public sealed partial record AvailableDevice
     }
 }
 
+public sealed class ClientInfo
+{
+    public string ClientIp { get; set; } = string.Empty;
+    public int ConnectionId { get; set; }
+    public string ConnectionType { get; set; } = string.Empty;
+}
+
 public sealed class VirtualHereSnapshot
 {
     public List<UsedDevice> UsedDevices { get; } = new();
     public List<AvailableDevice> AvailableDevices { get; } = new();
+    public List<ClientInfo> Clients { get; } = new();
 }
 
 public sealed class VirtualHereResponseParser
@@ -154,6 +162,7 @@ public sealed class VirtualHereResponseParser
     private static readonly Regex AddressRegex = new(@"(?:\bat\s+address\s+|\baddress\s+)(?<address>\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex UsedByRegex = new(@"(?:used\s+by|bound\s+to|by)\s*(?<who>.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex TimeRemainingRegex = new(@"(?:remaining|left)\s*[:=]\s*(?<remaining>[^,;]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ClientLineRegex = new(@"(?:connection\s+(?<cid>\d+).*(?<ip>\d{1,3}(?:\.\d{1,3}){3}))|(?:(?<ip2>\d{1,3}(?:\.\d{1,3}){3}).*connection\s+(?<cid2>\d+))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly UsageTimeManager _usageTimeManager;
 
@@ -173,10 +182,11 @@ public sealed class VirtualHereResponseParser
         var serverName = string.Empty;
         var ipAddress = string.Empty;
 
-        var lines = data.Split('\n');
+        var lines = data.Split('
+');
         for (var i = 0; i < lines.Length; i++)
         {
-            var line = lines[i].TrimEnd('\r');
+            var line = lines[i].TrimEnd('');
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -187,6 +197,12 @@ public sealed class VirtualHereResponseParser
             {
                 serverName = serverMatch.Groups["name"].Value.Trim();
                 ipAddress = serverMatch.Groups["ip"].Value.Trim();
+                continue;
+            }
+
+            if (TryParseClientLine(line, out var clientInfo))
+            {
+                snapshot.Clients.Add(clientInfo);
                 continue;
             }
 
@@ -220,6 +236,34 @@ public sealed class VirtualHereResponseParser
         }
 
         return snapshot;
+    }
+
+    private static bool TryParseClientLine(string line, out ClientInfo client)
+    {
+        client = new ClientInfo();
+        var match = ClientLineRegex.Match(line);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var ip = match.Groups["ip"].Success ? match.Groups["ip"].Value : match.Groups["ip2"].Value;
+        var connectionText = match.Groups["cid"].Success ? match.Groups["cid"].Value : match.Groups["cid2"].Value;
+
+        if (string.IsNullOrWhiteSpace(ip))
+        {
+            return false;
+        }
+
+        _ = int.TryParse(connectionText, out var connectionId);
+
+        client = new ClientInfo
+        {
+            ClientIp = ip.Trim(),
+            ConnectionId = connectionId,
+            ConnectionType = line.IndexOf("tcp", StringComparison.OrdinalIgnoreCase) >= 0 ? "TCP" : "VirtualHere IPC"
+        };
+        return true;
     }
 
     private static bool TryParseDeviceLine(string line, out string name, out string id, out string tail, out string usedBy)

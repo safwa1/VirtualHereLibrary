@@ -18,7 +18,7 @@ monitor.DeviceFound += (_, e) =>
 monitor.ClientConnected += (_, e) =>
     Console.WriteLine($"[ClientConnected] time={e.Timestamp:O} ip={e.ClientIp} connection={e.ConnectionId} type={e.ConnectionType}");
 monitor.ClientDisconnected += (_, e) =>
-    Console.WriteLine($"[ClientDisconnected] time={e.Timestamp:O} connection={e.ConnectionId} reason={e.Reason}");
+    Console.WriteLine($"[ClientDisconnected] time={e.Timestamp:O} ip={e.ClientIp} connection={e.ConnectionId} reason={e.Reason}");
 
 monitor.DeviceAppeared += e =>
     Console.WriteLine($"[Appeared] server={e.Identity.ServerName} id={e.Identity.DeviceId} name={e.Device.DeviceName} status={e.Device.Status} usage={e.Device.UsageTimeAsString()}");

@@ -5,13 +5,14 @@ namespace vrhero.VirtualHere;
 public sealed class VirtualHereMonitor
 {
     private static readonly Regex VendorProductRegex = new(@"(?<vendor>[0-9a-fA-F]{4}):(?<product>[0-9a-fA-F]{4})", RegexOptions.Compiled);
+    private static readonly Regex ConnectionIdRegex = new(@"(?:connection\s+|#)(?<id>\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly VirtualHereIpcClient _ipcClient;
     private readonly VirtualHereResponseParser _parser;
     private readonly TimeSpan _interval;
 
     private Dictionary<DeviceIdentity, UsedDevice> _previousUsed = new();
     private Dictionary<DeviceIdentity, AvailableDevice> _previousAvailable = new();
-    private HashSet<string> _previousClients = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ClientInfo> _previousClients = new(StringComparer.OrdinalIgnoreCase);
     private bool _isFirstSuccessfulPoll;
 
     public event Action<DeviceAppeared>? DeviceAppeared;
@@ -62,17 +63,18 @@ public sealed class VirtualHereMonitor
 
         var usedNow = new Dictionary<DeviceIdentity, UsedDevice>(snapshot.UsedDevices.Count);
         var availNow = new Dictionary<DeviceIdentity, AvailableDevice>(snapshot.AvailableDevices.Count);
-        var clientsNow = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var clientsNow = new Dictionary<string, ClientInfo>(snapshot.Clients.Count + snapshot.UsedDevices.Count, StringComparer.OrdinalIgnoreCase);
 
         for (var i = 0; i < snapshot.UsedDevices.Count; i++)
         {
             var device = snapshot.UsedDevices[i];
             usedNow[ToIdentity(device.ServerName, device.DeviceId)] = device;
 
-            var clientKey = NormalizeClientKey(device.UsedBy);
-            if (!string.IsNullOrEmpty(clientKey))
+            var client = BuildClientFromUsedBy(device.UsedBy);
+            if (!string.IsNullOrEmpty(client.ClientIp))
             {
-                clientsNow.Add(clientKey);
+                var clientKey = BuildClientKey(client.ClientIp, client.ConnectionId);
+                clientsNow[clientKey] = client;
             }
         }
 
@@ -80,6 +82,18 @@ public sealed class VirtualHereMonitor
         {
             var device = snapshot.AvailableDevices[i];
             availNow[ToIdentity(device.ServerName, device.DeviceId)] = device;
+        }
+
+        for (var i = 0; i < snapshot.Clients.Count; i++)
+        {
+            var client = snapshot.Clients[i];
+            if (string.IsNullOrWhiteSpace(client.ClientIp))
+            {
+                continue;
+            }
+
+            var clientKey = BuildClientKey(client.ClientIp, client.ConnectionId);
+            clientsNow[clientKey] = client;
         }
 
         EmitChanges(_previousUsed, _previousAvailable, usedNow, availNow);
@@ -138,8 +152,9 @@ public sealed class VirtualHereMonitor
 
             if (!previousUsed.TryGetValue(identity, out var oldUsed))
             {
-                RaiseDeviceAppeared(new DeviceAppeared(identity, new AvailableDevice(device.DeviceName, device.DeviceId, "In Use", device.UsageTime, device.ServerName)));
-                RaiseDeviceFound(BuildFoundEvent(new AvailableDevice(device.DeviceName, device.DeviceId, "In Use", device.UsageTime, device.ServerName)));
+                var syntheticAvailable = new AvailableDevice(device.DeviceName, device.DeviceId, "In Use", device.UsageTime, device.ServerName);
+                RaiseDeviceAppeared(new DeviceAppeared(identity, syntheticAvailable));
+                RaiseDeviceFound(BuildFoundEvent(syntheticAvailable));
                 RaiseDeviceBound(BuildBoundEvent(device));
                 continue;
             }
@@ -173,50 +188,66 @@ public sealed class VirtualHereMonitor
         }
     }
 
-    private void EmitClientChanges(HashSet<string> previousClients, HashSet<string> clientsNow)
+    private void EmitClientChanges(Dictionary<string, ClientInfo> previousClients, Dictionary<string, ClientInfo> clientsNow)
     {
-        foreach (var client in clientsNow)
+        foreach (var pair in clientsNow)
         {
-            if (previousClients.Contains(client))
+            if (previousClients.ContainsKey(pair.Key))
             {
                 continue;
             }
 
+            var client = pair.Value;
             RaiseClientConnected(new ClientConnectedEvent
             {
                 Timestamp = DateTime.Now,
-                ClientIp = client,
-                ConnectionId = ParseConnectionId(client),
-                ConnectionType = "VirtualHere IPC"
+                ClientIp = client.ClientIp,
+                ConnectionId = client.ConnectionId,
+                ConnectionType = string.IsNullOrWhiteSpace(client.ConnectionType) ? "VirtualHere IPC" : client.ConnectionType
             });
         }
 
-        foreach (var client in previousClients)
+        foreach (var pair in previousClients)
         {
-            if (clientsNow.Contains(client))
+            if (clientsNow.ContainsKey(pair.Key))
             {
                 continue;
             }
 
+            var client = pair.Value;
             RaiseClientDisconnected(new ClientDisconnectedEvent
             {
                 Timestamp = DateTime.Now,
-                ConnectionId = ParseConnectionId(client),
-                Reason = $"Client no longer present: {client}"
+                ClientIp = client.ClientIp,
+                ConnectionId = client.ConnectionId,
+                Reason = "Client no longer present in LIST snapshot"
             });
         }
     }
 
-    private static string NormalizeClientKey(string usedBy)
+    private static string BuildClientKey(string clientIp, int connectionId)
+        => string.Concat(clientIp, "#", connectionId.ToString());
+
+    private static ClientInfo BuildClientFromUsedBy(string usedBy)
     {
         if (string.IsNullOrWhiteSpace(usedBy))
         {
-            return string.Empty;
+            return new ClientInfo();
         }
 
         var value = usedBy.Trim();
-        var separator = value.IndexOf(' ');
-        return separator > 0 ? value[..separator] : value;
+        var connectionMatch = ConnectionIdRegex.Match(value);
+        var connectionId = connectionMatch.Success && int.TryParse(connectionMatch.Groups["id"].Value, out var parsed) ? parsed : 0;
+
+        var firstTokenEnd = value.IndexOf(' ');
+        var clientIp = firstTokenEnd > 0 ? value[..firstTokenEnd].Trim() : value;
+
+        return new ClientInfo
+        {
+            ClientIp = clientIp,
+            ConnectionId = connectionId,
+            ConnectionType = "VirtualHere IPC"
+        };
     }
 
     private static int ParseConnectionId(string raw)
@@ -226,8 +257,8 @@ public sealed class VirtualHereMonitor
             return 0;
         }
 
-        var numberStart = raw.LastIndexOf('#');
-        if (numberStart >= 0 && numberStart + 1 < raw.Length && int.TryParse(raw[(numberStart + 1)..], out var id))
+        var match = ConnectionIdRegex.Match(raw);
+        if (match.Success && int.TryParse(match.Groups["id"].Value, out var id))
         {
             return id;
         }
