@@ -43,34 +43,19 @@ public sealed class UsageTimeManager
 public sealed partial record UsedDevice
 {
     public string DeviceName { get; set; } = string.Empty;
-
     public string DeviceId { get; set; } = string.Empty;
-
     public string IpAddress { get; set; } = string.Empty;
-
     public string UsedBy { get; set; } = string.Empty;
-
     public DateTime StartTime { get; set; }
-
     public TimeSpan UsageTime { get; set; }
-
     public string TimeRemaining { get; set; } = string.Empty;
-
     public string ServerName { get; set; } = string.Empty;
 
     public UsedDevice()
     {
     }
 
-    public UsedDevice(
-        string deviceName,
-        string deviceId,
-        string ipAddress,
-        string usedBy,
-        DateTime startTime,
-        TimeSpan usageTime,
-        string timeRemaining,
-        string serverName)
+    public UsedDevice(string deviceName, string deviceId, string ipAddress, string usedBy, DateTime startTime, TimeSpan usageTime, string timeRemaining, string serverName)
     {
         DeviceName = deviceName;
         DeviceId = deviceId;
@@ -103,13 +88,9 @@ public sealed partial record UsedDevice
 public sealed partial record AvailableDevice
 {
     public string DeviceName { get; set; } = string.Empty;
-
     public string DeviceId { get; set; } = string.Empty;
-
     public string Status { get; set; } = string.Empty;
-
     public TimeSpan UsageTime { get; set; }
-
     public string ServerName { get; set; } = string.Empty;
 
     public AvailableDevice()
@@ -125,7 +106,10 @@ public sealed partial record AvailableDevice
         ServerName = serverName;
     }
 
-    public bool IsInUse() => string.Equals(Status, "In Use", StringComparison.OrdinalIgnoreCase);
+    public bool IsInUse() =>
+        Status.IndexOf("in use", StringComparison.OrdinalIgnoreCase) >= 0
+        || Status.IndexOf("bound", StringComparison.OrdinalIgnoreCase) >= 0
+        || Status.IndexOf("used", StringComparison.OrdinalIgnoreCase) >= 0;
 
     public AvailableDevice UpdateFrom(AvailableDevice other)
     {
@@ -150,7 +134,7 @@ public sealed partial record AvailableDevice
 
     public int GetAddress()
     {
-        var value = DeviceId.Split(".")[^1];
+        var value = DeviceId.Split('.')[^1];
         return int.Parse(value, CultureInfo.InvariantCulture);
     }
 }
@@ -158,14 +142,17 @@ public sealed partial record AvailableDevice
 public sealed class VirtualHereSnapshot
 {
     public List<UsedDevice> UsedDevices { get; } = new();
-
     public List<AvailableDevice> AvailableDevices { get; } = new();
 }
 
 public sealed class VirtualHereResponseParser
 {
     private static readonly Regex ServerRegex = new(@"^(?<name>.+)\((?<ip>[^:]+):(?<port>\d+)\)$", RegexOptions.Compiled);
-    private static readonly Regex DeviceRegex = new(@"^\s*\-\-\>\s*(?<name>.+?)\s*\((?<id>.+?)\)(?<tail>.*)$", RegexOptions.Compiled);
+    private static readonly Regex DeviceLineRegex = new(@"^\s*\-\-\>\s*(?<body>.+)$", RegexOptions.Compiled);
+    private static readonly Regex ParenthesisIdRegex = new(@"\((?<id>[^)]+)\)", RegexOptions.Compiled);
+    private static readonly Regex VendorProductRegex = new(@"\[(?<vendor>[0-9a-fA-F]{4}):(?<product>[0-9a-fA-F]{4})\]", RegexOptions.Compiled);
+    private static readonly Regex AddressRegex = new(@"(?:\bat\s+address\s+|\baddress\s+)(?<address>\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex UsedByRegex = new(@"(?:used\s+by|bound\s+to|by)\s*(?<who>.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex TimeRemainingRegex = new(@"(?:remaining|left)\s*[:=]\s*(?<remaining>[^,;]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly UsageTimeManager _usageTimeManager;
@@ -203,24 +190,19 @@ public sealed class VirtualHereResponseParser
                 continue;
             }
 
-            var deviceMatch = DeviceRegex.Match(line);
-            if (!deviceMatch.Success)
+            if (!TryParseDeviceLine(line, out var name, out var id, out var tail, out var usedBy))
             {
                 continue;
             }
 
-            var name = deviceMatch.Groups["name"].Value.Trim();
-            var id = deviceMatch.Groups["id"].Value.Trim();
-            var tail = deviceMatch.Groups["tail"].Value.Trim();
             var usageTime = _usageTimeManager.ParseUsageTime(tail);
-
-            if (tail.IndexOf("in use", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (IsUsedState(tail))
             {
                 snapshot.UsedDevices.Add(new UsedDevice(
                     deviceName: name,
                     deviceId: id,
                     ipAddress: ipAddress,
-                    usedBy: tail,
+                    usedBy: string.IsNullOrWhiteSpace(usedBy) ? tail : usedBy,
                     startTime: _usageTimeManager.GetStartTime(usageTime),
                     usageTime: usageTime,
                     timeRemaining: ParseTimeRemaining(tail),
@@ -238,6 +220,113 @@ public sealed class VirtualHereResponseParser
         }
 
         return snapshot;
+    }
+
+    private static bool TryParseDeviceLine(string line, out string name, out string id, out string tail, out string usedBy)
+    {
+        name = string.Empty;
+        id = string.Empty;
+        tail = string.Empty;
+        usedBy = string.Empty;
+
+        var lineMatch = DeviceLineRegex.Match(line);
+        if (!lineMatch.Success)
+        {
+            return false;
+        }
+
+        var body = lineMatch.Groups["body"].Value.Trim();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        var idMatch = ParenthesisIdRegex.Match(body);
+        if (idMatch.Success)
+        {
+            id = idMatch.Groups["id"].Value.Trim();
+        }
+
+        var vpMatch = VendorProductRegex.Match(body);
+        var vendorProduct = vpMatch.Success ? $"{vpMatch.Groups["vendor"].Value}:{vpMatch.Groups["product"].Value}" : string.Empty;
+
+        var addressMatch = AddressRegex.Match(body);
+        var address = addressMatch.Success ? addressMatch.Groups["address"].Value : string.Empty;
+
+        name = ExtractName(body);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = "Unknown Device";
+        }
+
+        if (idMatch.Success)
+        {
+            var tailStart = idMatch.Index + idMatch.Length;
+            tail = tailStart < body.Length ? body[tailStart..].Trim(' ', ',', ';') : string.Empty;
+        }
+        else
+        {
+            tail = body;
+        }
+
+        var usedByMatch = UsedByRegex.Match(tail);
+        if (usedByMatch.Success)
+        {
+            usedBy = usedByMatch.Groups["who"].Value.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            if (!string.IsNullOrWhiteSpace(vendorProduct) && !string.IsNullOrWhiteSpace(address))
+            {
+                id = $"{vendorProduct}.{address}";
+            }
+            else if (!string.IsNullOrWhiteSpace(vendorProduct))
+            {
+                id = vendorProduct;
+            }
+            else
+            {
+                id = name;
+            }
+        }
+
+        return true;
+    }
+
+    private static string ExtractName(string body)
+    {
+        var parenIndex = body.IndexOf('(');
+        var bracketIndex = body.IndexOf('[');
+
+        var stop = -1;
+        if (parenIndex >= 0 && bracketIndex >= 0)
+        {
+            stop = Math.Min(parenIndex, bracketIndex);
+        }
+        else if (parenIndex >= 0)
+        {
+            stop = parenIndex;
+        }
+        else if (bracketIndex >= 0)
+        {
+            stop = bracketIndex;
+        }
+
+        if (stop <= 0)
+        {
+            return body.Trim();
+        }
+
+        return body[..stop].Trim();
+    }
+
+    private static bool IsUsedState(string tail)
+    {
+        return tail.IndexOf("in use", StringComparison.OrdinalIgnoreCase) >= 0
+               || tail.IndexOf("used by", StringComparison.OrdinalIgnoreCase) >= 0
+               || tail.IndexOf("bound", StringComparison.OrdinalIgnoreCase) >= 0
+               || tail.IndexOf("currently used", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static string ParseTimeRemaining(string tail)

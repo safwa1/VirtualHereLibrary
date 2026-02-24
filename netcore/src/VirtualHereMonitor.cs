@@ -129,16 +129,18 @@ public sealed class VirtualHereMonitor
             var identity = pair.Key;
             var device = pair.Value;
 
-            if (previousAvailable.TryGetValue(identity, out var oldAvailableDevice))
+            if (previousAvailable.TryGetValue(identity, out _))
             {
                 RaiseDeviceBecameUsed(new DeviceBecameUsed(identity, device));
-                RaiseDeviceBound(BuildBoundEvent(device, oldAvailableDevice));
+                RaiseDeviceBound(BuildBoundEvent(device));
                 continue;
             }
 
             if (!previousUsed.TryGetValue(identity, out var oldUsed))
             {
-                RaiseDeviceBound(BuildBoundEvent(device, null));
+                RaiseDeviceAppeared(new DeviceAppeared(identity, new AvailableDevice(device.DeviceName, device.DeviceId, "In Use", device.UsageTime, device.ServerName)));
+                RaiseDeviceFound(BuildFoundEvent(new AvailableDevice(device.DeviceName, device.DeviceId, "In Use", device.UsageTime, device.ServerName)));
+                RaiseDeviceBound(BuildBoundEvent(device));
                 continue;
             }
 
@@ -233,7 +235,7 @@ public sealed class VirtualHereMonitor
         return 0;
     }
 
-    private static DeviceBoundEvent BuildBoundEvent(UsedDevice usedDevice, AvailableDevice? oldAvailable)
+    private static DeviceBoundEvent BuildBoundEvent(UsedDevice usedDevice)
     {
         ExtractVendorProduct(usedDevice.DeviceId, out var vendorId, out var productId);
 
