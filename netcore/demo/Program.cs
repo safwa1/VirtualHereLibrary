@@ -5,6 +5,21 @@ var parser = new VirtualHereResponseParser(usageManager);
 var ipcClient = new VirtualHereIpcClient(connectTimeout: TimeSpan.FromSeconds(2));
 var monitor = new VirtualHereMonitor(ipcClient, parser, TimeSpan.FromMilliseconds(350));
 
+monitor.ServerStartListening += (_, _) => Console.WriteLine("[Server] Listening via vhclient IPC");
+monitor.Reading += (_, text) => Console.WriteLine($"[Reading] {text.Length} chars");
+monitor.DeviceBound += (_, e) =>
+    Console.WriteLine($"[DeviceBound] time={e.Timestamp:O} device={e.DeviceName} id={e.DeviceId} vendor={e.VendorId} product={e.ProductId} connection={e.ConnectionId}");
+monitor.DeviceUnbound += (_, e) =>
+    Console.WriteLine($"[DeviceUnbound] time={e.Timestamp:O} device={e.DeviceName} id={e.DeviceId} vendor={e.VendorId} product={e.ProductId} connection={e.ConnectionId}");
+monitor.DeviceUnmanaged += (_, e) =>
+    Console.WriteLine($"[DeviceUnmanaged] time={e.Timestamp:O} device={e.DeviceName} id={e.DeviceId} vendor={e.VendorId} product={e.ProductId}");
+monitor.DeviceFound += (_, e) =>
+    Console.WriteLine($"[DeviceFound] time={e.Timestamp:O} device={e.DeviceName} id={e.DeviceId} vendor={e.VendorId} product={e.ProductId} address={e.Address}");
+monitor.ClientConnected += (_, e) =>
+    Console.WriteLine($"[ClientConnected] time={e.Timestamp:O} ip={e.ClientIp} connection={e.ConnectionId} type={e.ConnectionType}");
+monitor.ClientDisconnected += (_, e) =>
+    Console.WriteLine($"[ClientDisconnected] time={e.Timestamp:O} connection={e.ConnectionId} reason={e.Reason}");
+
 monitor.DeviceAppeared += e =>
     Console.WriteLine($"[Appeared] server={e.Identity.ServerName} id={e.Identity.DeviceId} name={e.Device.DeviceName} status={e.Device.Status} usage={e.Device.UsageTimeAsString()}");
 monitor.DeviceDisappeared += e =>
