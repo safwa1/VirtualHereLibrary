@@ -140,8 +140,8 @@ public sealed class VirtualHereMonitor
                && string.Equals(left.DeviceId, right.DeviceId, StringComparison.Ordinal)
                && string.Equals(left.IpAddress, right.IpAddress, StringComparison.Ordinal)
                && string.Equals(left.UsedBy, right.UsedBy, StringComparison.Ordinal)
-               && Nullable.Equals(left.StartTime, right.StartTime)
-               && string.Equals(left.UsageTime, right.UsageTime, StringComparison.Ordinal)
+               && left.StartTime == right.StartTime
+               && left.UsageTime == right.UsageTime
                && string.Equals(left.TimeRemaining, right.TimeRemaining, StringComparison.Ordinal)
                && string.Equals(left.ServerName, right.ServerName, StringComparison.Ordinal);
     }
@@ -151,7 +151,7 @@ public sealed class VirtualHereMonitor
         return string.Equals(left.DeviceName, right.DeviceName, StringComparison.Ordinal)
                && string.Equals(left.DeviceId, right.DeviceId, StringComparison.Ordinal)
                && string.Equals(left.Status, right.Status, StringComparison.Ordinal)
-               && string.Equals(left.UsageTime, right.UsageTime, StringComparison.Ordinal)
+               && left.UsageTime == right.UsageTime
                && string.Equals(left.ServerName, right.ServerName, StringComparison.Ordinal);
     }
 

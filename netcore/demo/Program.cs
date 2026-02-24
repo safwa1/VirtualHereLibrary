@@ -6,17 +6,17 @@ var ipcClient = new VirtualHereIpcClient(connectTimeout: TimeSpan.FromSeconds(2)
 var monitor = new VirtualHereMonitor(ipcClient, parser, TimeSpan.FromMilliseconds(350));
 
 monitor.DeviceAppeared += e =>
-    Console.WriteLine($"[Appeared] {e.Identity.ServerName}/{e.Identity.DeviceId} {e.Device.DeviceName}");
+    Console.WriteLine($"[Appeared] server={e.Identity.ServerName} id={e.Identity.DeviceId} name={e.Device.DeviceName} status={e.Device.Status} usage={e.Device.UsageTimeAsString()}");
 monitor.DeviceDisappeared += e =>
-    Console.WriteLine($"[Disappeared] {e.Identity.ServerName}/{e.Identity.DeviceId}");
+    Console.WriteLine($"[Disappeared] server={e.Identity.ServerName} id={e.Identity.DeviceId}");
 monitor.DeviceBecameUsed += e =>
-    Console.WriteLine($"[BecameUsed] {e.Identity.ServerName}/{e.Identity.DeviceId} by {e.Device.UsedBy}");
+    Console.WriteLine($"[BecameUsed] server={e.Identity.ServerName} id={e.Identity.DeviceId} name={e.Device.DeviceName} usedBy={e.Device.UsedBy} ip={e.Device.IpAddress} since={e.Device.StartTime:O} usage={e.Device.UsageTime:g} remaining={e.Device.TimeRemaining}");
 monitor.DeviceBecameAvailable += e =>
-    Console.WriteLine($"[BecameAvailable] {e.Identity.ServerName}/{e.Identity.DeviceId} status={e.Device.Status}");
+    Console.WriteLine($"[BecameAvailable] server={e.Identity.ServerName} id={e.Identity.DeviceId} name={e.Device.DeviceName} status={e.Device.Status} usage={e.Device.UsageTimeAsString()}");
 monitor.UsedDeviceUpdated += e =>
-    Console.WriteLine($"[UsedUpdated] {e.Identity.ServerName}/{e.Identity.DeviceId} usage={e.Device.UsageTime}");
+    Console.WriteLine($"[UsedUpdated] server={e.Identity.ServerName} id={e.Identity.DeviceId} usedBy={e.Device.UsedBy} usage={e.Device.UsageTime:g} remaining={e.Device.TimeRemaining}");
 monitor.AvailableDeviceUpdated += e =>
-    Console.WriteLine($"[AvailableUpdated] {e.Identity.ServerName}/{e.Identity.DeviceId} status={e.Device.Status}");
+    Console.WriteLine($"[AvailableUpdated] server={e.Identity.ServerName} id={e.Identity.DeviceId} status={e.Device.Status} usage={e.Device.UsageTimeAsString()}");
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, args) =>
