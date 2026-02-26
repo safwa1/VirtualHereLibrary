@@ -5,6 +5,8 @@ VisualStudioVersion = 16.0.31911.196
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VirtualHereLibrary", "src/VirtualHereLibrary.csproj", "{42327B33-400D-4D3D-9623-576F92A568D5}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "VirtualHereMonitorDemo", "demo/VirtualHereMonitorDemo.csproj", "{B2EA120A-19E2-40DF-8A90-138DB9A7A3B3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{42327B33-400D-4D3D-9623-576F92A568D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{42327B33-400D-4D3D-9623-576F92A568D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{42327B33-400D-4D3D-9623-576F92A568D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2EA120A-19E2-40DF-8A90-138DB9A7A3B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2EA120A-19E2-40DF-8A90-138DB9A7A3B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2EA120A-19E2-40DF-8A90-138DB9A7A3B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2EA120A-19E2-40DF-8A90-138DB9A7A3B3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
